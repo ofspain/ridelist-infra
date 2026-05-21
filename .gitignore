@@ -1,0 +1,8 @@
+/local/data
+/local/.env
+
+/test-ec2/.env
+
+/cloud-aws-infra/.venv
+
+.idea

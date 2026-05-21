@@ -1,0 +1,129 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────
+# RideList EC2 TEST environment
+# Run with:
+#   docker compose -f test-ec2/docker-compose.yml --env-file test-ec2/.env up -d
+#
+# Prerequisites on EC2:
+#   - Docker installed
+#   - Docker Compose installed
+#   - .env file populated (via inject-secrets.sh)
+#   - SSL certificates obtained via certbot
+#   - ECR authenticated: aws ecr get-login-password | docker login
+# ─────────────────────────────────────────────────────────────
+
+services:
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: ridelist-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - /data/postgres:/var/lib/postgresql/data
+    networks:
+      - ridelist-ec2
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ridelist"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    image: ${ECR_BACKEND_IMAGE}
+    container_name: ridelist-backend
+    restart: always
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: ${JWT_EXPIRATION}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION}
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY}
+      AWS_REGION: ${AWS_REGION}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      EMAIL_SENDER: ${EMAIL_SENDER}
+      EMAIL_FROM: ${EMAIL_FROM}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
+      IMAGE_MIN_COUNT: ${IMAGE_MIN_COUNT}
+      IMAGE_MAX_COUNT: ${IMAGE_MAX_COUNT}
+      IMAGE_MAX_SIZE_MB: ${IMAGE_MAX_SIZE_MB}
+      JAVA_OPTS: "-Xmx350m -Xms256m -XX:+UseContainerSupport -Djava.security.egd=file:/dev/./urandom"
+      SPRING_PROFILES_ACTIVE: docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ridelist-ec2
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8090/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  frontend:
+    image: ${ECR_FRONTEND_IMAGE}
+    container_name: ridelist-frontend
+    restart: always
+    networks:
+      - ridelist-ec2
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:alpine
+    container_name: ridelist-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../nginx/nginx.ec2.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    networks:
+      - ridelist-ec2
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  ridelist-ec2:
+    name: ridelist_ec2_network
+    driver: bridge
