@@ -3,7 +3,7 @@ version: "3.8"
 # ─────────────────────────────────────────────────────────────
 # RideList EC2 TEST environment
 # Run with:
-#   docker compose -f test-ec2/docker-compose.yml --env-file test-ec2/.env up -d
+#   docker compose --env-file /opt/ridelist/.env up -d
 #
 # Prerequisites on EC2:
 #   - Docker installed

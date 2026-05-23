@@ -1,314 +1,182 @@
-# RideList Infrastructure Generation Prompt
+# 🚀 GitHub Actions → AWS Secrets Manager CI/CD Pipeline (Agent Spec)
 
-You are writing the Docker Compose 
-configuration for the RideList test 
-environment on EC2.
+## 📌 CONTEXT
 
-Target location:
-- root of this directory
+You are working on a production system called **RideList**, which runs across:
 
-Create the following files:
+- **EC2 (current staging environment using Docker Compose)**
+- **Future EKS (Kubernetes production environment)**
 
-- docker-compose.yml
-- docker-compose.dev.yml
-- .env.example
-- scripts/start.sh
-- scripts/inject-secrets.sh
+The system uses **AWS Secrets Manager** as the central source of truth for all sensitive configuration.
 
-Also prepare the following directory structure:
+The application expects environment variables like:
 
-.
-├── docker-compose.yml
-├── docker-compose.dev.yml
-├── .env.example
-├── nginx/
-│   └── nginx.conf
-└── scripts/
-    ├── start.sh
-    └── inject-secrets.sh
-
-Requirements:
-- Use Docker Compose version 3.8
-- Use PostgreSQL 15 Alpine
-- Use AWS ECR images for backend/frontend in production
-- Use nginx as reverse proxy
-- Use internal Docker bridge networking
-- Persist PostgreSQL data on host disk
-- Add container healthchecks
-- Add JSON file log rotation limits
-- Use production-safe defaults
-- Backend must not be publicly exposed directly
-- nginx must expose ports 80 and 443
-- Use AWS Secrets Manager for runtime secret injection
-- Use `.env.backend` for backend secret injection
-- Local development overrides must expose useful ports
-- nginx should be optional locally
+- DB credentials (`DB_USERNAME`, `DB_PASSWORD`, `DB_HOST`)
+- JWT config (`JWT_SECRET`, `JWT_EXPIRATION`, `JWT_REFRESH_EXPIRATION`)
+- SMTP config (`SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD`)
+- AWS config (`AWS_REGION`, `AWS_S3_BUCKET`)
+- App config (`FRONTEND_BASE_URL`, etc.)
 
 ---
 
-# docker-compose.yml
+## 🎯 GOAL
 
-```yaml
-version: "3.8"
+Design and implement a **GitHub Actions pipeline** that securely:
 
-services:
+1. Pushes environment-specific secrets to AWS Secrets Manager  
+2. Prevents accidental overwrite or deletion of unrelated keys  
+3. Supports multiple environments:
+   - `dev`
+   - `staging`
+   - `prod`
+4. Enables safe updates (merge strategy, not destructive replacement)  
+5. Supports rollback of secrets to a previous version  
+6. Works with JSON-based Secrets Manager secrets (NOT individual key/value secrets per variable)  
+7. Integrates with AWS IAM securely (no long-lived AWS keys in code if possible)  
+8. Produces audit-friendly deployments  
 
-  postgres:
-    image: postgres:15-alpine
-    container_name: ridelist-postgres
-    restart: always
-    environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USERNAME}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      PGDATA: /var/lib/postgresql/data/pgdata
-    volumes:
-      - /data/postgres:/var/lib/postgresql/data
-    networks:
-      - internal
-    healthcheck:
-      test: [ "CMD-SHELL",
-        "pg_isready -U ${DB_USERNAME} \
-             -d ${DB_NAME}" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+---
 
-  backend:
-    image: ${ECR_BACKEND_IMAGE}
-    container_name: ridelist-backend
-    restart: always
-    env_file:
-      - .env.backend
-    environment:
-      JAVA_OPTS: >-
-        -Xmx350m -Xms256m
-        -XX:+UseContainerSupport
-        -Djava.security.egd=file:/dev/./urandom
-      DB_HOST: postgres
-      DB_PORT: "5432"
-      DB_NAME: ${DB_NAME}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
-      SPRING_PROFILES_ACTIVE: prod
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - internal
-    healthcheck:
-      test: [ "CMD", "wget", "-q",
-              "-O", "/dev/null",
-              "http://localhost:8080/actuator/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 90s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
+## 🧱 CURRENT ARCHITECTURE CONTEXT
 
-  frontend:
-    image: ${ECR_FRONTEND_IMAGE}
-    container_name: ridelist-frontend
-    restart: always
-    networks:
-      - internal
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+### EC2 staging flow (already implemented):
 
-  nginx:
-    image: nginx:alpine
-    container_name: ridelist-nginx
-    restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-      - /var/www/certbot:/var/www/certbot:ro
-    depends_on:
-      backend:
-        condition: service_healthy
-      frontend:
-        condition: service_started
-    networks:
-      - internal
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-networks:
-  internal:
-    driver: bridge
+```text
+GitHub Actions (future)
+        ↓
+AWS Secrets Manager
+        ↓
+EC2 User Data (config-loader.sh)
+        ↓
+/opt/ridelist/.env
+        ↓
+Docker Compose
+        ↓
+Spring Boot App
 ```
 
 
-# docker-compose.dev.yml
+## 🧱 Secret structure in AWS:
 
-```yaml
-version: "3.8"
+### Each environment uses grouped secrets:
 
-services:
-
-  postgres:
-    ports:
-      - "5432:5432"
-
-  backend:
-    image: ridelist-backend:local
-    environment:
-      SPRING_PROFILES_ACTIVE: dev
-      JAVA_OPTS: "-Xmx512m -Xms256m"
-    ports:
-      - "8080:8080"
-
-  frontend:
-    image: ridelist-frontend:local
-    ports:
-      - "3000:80"
-
-  nginx:
-    profiles:
-      - nginx-local
-
- ```
-
- # .env.example
-
- ```yaml
- # Docker Compose environment template
-# Copy to .env.shared and fill in values
-# NEVER commit .env.shared to git
-
-# ECR Image URIs (set by CI/CD)
-ECR_BACKEND_IMAGE=
-ECR_FRONTEND_IMAGE=
-
-# Database
-DB_NAME=ridelist
-DB_USERNAME=ridelist
-DB_PASSWORD=
-
-# These are also injected into .env.shared-dev.backend
-# from AWS Secrets Manager
+```text
+/ridelist/{env}/database
+/ridelist/{env}/jwt
+/ridelist/{env}/smtp
+/ridelist/{env}/aws
+/ridelist/{env}/app-config
 ```
 
-# scripts/start.sh
-```bash
-#!/bin/bash
-set -e
+Each secret is a JSON object like:
 
-echo "=== RideList Startup ==="
-echo "Time: $(date)"
-
-# 1. Inject secrets from AWS Secrets Manager
-echo "Injecting secrets..."
-bash /opt/ridelist/scripts/inject-secrets.sh
-
-# 2. Authenticate Docker to ECR
-echo "Authenticating to ECR..."
-aws ecr get-login-password \
-  --region eu-west-1 \
-  --profile ridelist-cdk | \
-  docker login --username AWS \
-  --password-stdin \
-  ${AWS_ACCOUNT_ID}.dkr.ecr.eu-west-1.amazonaws.com
-
-# 3. Pull latest images
-echo "Pulling latest images..."
-docker compose pull
-
-# 4. Start services
-echo "Starting services..."
-docker compose up -d
-
-# 5. Wait for backend health
-echo "Waiting for backend health..."
-
-RETRIES=0
-MAX_RETRIES=12
-
-until docker compose exec -T backend \
-  wget -q -O /dev/null \
-  http://localhost:8080/actuator/health \
-  2>/dev/null; do
-
-  RETRIES=$((RETRIES+1))
-
-  if [ $RETRIES -ge $MAX_RETRIES ]; then
-    echo "Backend failed to become healthy"
-    docker compose logs backend --tail=50
-    exit 1
-  fi
-
-  echo "Waiting... ($RETRIES/$MAX_RETRIES)"
-  sleep 10
-done
-
-echo "=== RideList is UP ==="
-echo "Frontend: https://ofspain.click"
-echo "API:      https://api.ofspain.click"
-echo "Health:   https://api.ofspain.click/actuator/health"
-```
-
-# scripts/inject-secrets.sh
-```bash
-#!/bin/bash
-set -e
-
-ENV_FILE="/opt/ridelist/.env.backend"
-REGION="eu-west-1"
-PROFILE="ridelist-cdk"
-
-# Clear existing env file
-> $ENV_FILE
-
-echo "Fetching secrets from AWS Secrets Manager..."
-
-fetch_secret() {
-  local secret_id=$1
-
-  aws secretsmanager get-secret-value \
-    --secret-id "$secret_id" \
-    --region $REGION \
-    --profile $PROFILE \
-    --query SecretString \
-    --output text | \
-    jq -r 'to_entries[] |
-      "\(.key)=\(.value)"' >> $ENV_FILE
+```json
+{
+  "DB_USERNAME": "value",
+  "DB_PASSWORD": "value"
 }
-
-fetch_secret "/ridelist/test/database"
-fetch_secret "/ridelist/test/jwt"
-fetch_secret "/ridelist/test/aws"
-fetch_secret "/ridelist/test/email"
-fetch_secret "/ridelist/test/app"
-
-# Secure the file
-chmod 600 $ENV_FILE
-
-echo "Secrets injected to $ENV_FILE"
-echo "Total variables: $(wc -l < $ENV_FILE)"
 ```
 
-## AFTER EVERYTHING
-Inspect the USAGE.md and confirm the correctness, then edit if need be and reformat in a proper markdown file
+## 🔐 SECURITY REQUIREMENTS
 
-seed
-INSERT INTO users (name, email)
-VALUES ('Test User', 'test@example.com');
+### The pipeline MUST:
+
+Use GitHub OIDC → AWS IAM Role assumption (preferred)
+Avoid storing AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in GitHub secrets if possible
+If fallback is needed, clearly isolate and secure it
+Encrypt all secrets in transit (AWS SDK default acceptable)
+Never echo secrets in logs
+Mask sensitive values in GitHub Actions logs
+
+🧠 REQUIRED BEHAVIOR (VERY IMPORTANT)
+- 1. Safe update strategy (NO DATA LOSS)
+When updating a secret:
+Fetch existing secret JSON
+Merge with new values
+Only overwrite changed keys
+Preserve unknown keys (forward compatibility)
+
+- 2. Rollback strategy
+
+Implement versioning strategy using:
+AWS Secrets Manager native versioning (AWSPREVIOUS stage OR version IDs)
+OR backup before overwrite:
+
+s3://ridelist-secret-backups/{env}/{secret-name}/{timestamp}.json
+ 
+- 3. Environment separation
+
+Pipeline must support:
+test
+prod
+
+
+#### Selection via:
+
+env:
+  ENVIRONMENT: staging
+
+Secrets path:
+
+```text
+/ridelist/staging/*
+/ridelist/prod/*
+```
+
+### ⚙️ REQUIRED OUTPUT
+
+Generate:
+
+1. GitHub Actions workflow file
+  .github/workflows/secrets-sync.yml
+
+   Must include:
+
+- workflow dispatch OR push trigger
+- environment input parameter
+- AWS auth (prefer OIDC role assumption)
+- JSON merge logic
+
+Secrets Manager update calls
+2. Reusable script OR inline step
+Node.js OR Python preferred (NOT bash-heavy)
+Handles:
+reading JSON secrets
+merging updates
+pushing to AWS Secrets Manager
+3. IAM role policy (minimum required permissions)
+
+Include IAM policy for GitHub Actions role:
+
+secretsmanager:GetSecretValue
+secretsmanager:PutSecretValue
+secretsmanager:DescribeSecret
+secretsmanager:ListSecretVersionIds
+s3:PutObject (if backup enabled)
+kms:Encrypt (if custom KMS used)
+4. Safety checks
+
+Pipeline must include:
+
+confirmation step for production changes
+diff preview of secret changes before apply
+prevention of empty overwrite (critical safeguard)
+🚨 FAILURE MODES TO PREVENT
+
+The system must explicitly avoid:
+
+overwriting secrets with empty JSON {} accidentally
+deleting keys when partial update is pushed
+leaking secrets in logs
+mixing environments accidentally
+untracked manual console changes being silently overwritten
+🧪 OPTIONAL (BUT PREFERRED)
+
+If possible, include:
+
+GitHub Actions “dry run” mode
+secret diff output in PR comments
+rollback workflow (restore previous secret version)
+📌 FINAL EXPECTATION
+
+Produce a production-grade, safe, maintainable GitHub Actions → AWS Secrets Manager pipeline that can later scale into EKS without changes to application logic.

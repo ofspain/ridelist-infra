@@ -189,6 +189,41 @@ class ComputeStack(Stack):
             "chown -R ec2-user:ec2-user /opt/ridelist",
 
             # =====================================================
+            # CONFIG LOADER SCRIPT (FIXED HEREDOC)
+            # =====================================================
+
+            (
+                "cat <<'EOF' > /opt/ridelist/config-loader.sh\n"
+                "#!/bin/bash\n"
+                "set -euo pipefail\n"
+                "\n"
+                "ENV=${ENVIRONMENT:-test}\n"
+                "BASE_DIR=/opt/ridelist\n"
+                "OUT_FILE=$BASE_DIR/.env\n"
+                "\n"
+                "echo 'Loading config for:' $ENV\n"
+                "> $OUT_FILE\n"
+                "\n"
+                "SECRETS=(database jwt app-config smtp aws)\n"
+                "\n"
+                "for SECRET in \"${SECRETS[@]}\"; do\n"
+                "  echo \"Fetching $SECRET\"\n"
+                "  VALUE=$(aws secretsmanager get-secret-value \\\n"
+                "    --secret-id /ridelist/$ENV/$SECRET \\\n"
+                "    --query SecretString --output text)\n"
+                "\n"
+                "  echo \"$VALUE\" | jq -r 'to_entries[] | \"\\(.key)=\\(.value)\"' >> $OUT_FILE\n"
+                "done\n"
+                "\n"
+                "chmod 600 $OUT_FILE\n"
+                "echo 'DONE'\n"
+                "EOF\n"
+            ),
+            "chmod +x /opt/ridelist/config-loader.sh",
+            "chown ec2-user:ec2-user /opt/ridelist/config-loader.sh",
+            "ENVIRONMENT=test /opt/ridelist/config-loader.sh",
+
+            # =====================================================
             # SETUP COMPLETE MARKER
             # =====================================================
             "echo 'RIDELIST_SETUP_COMPLETE' > /opt/ridelist/.setup_complete",
