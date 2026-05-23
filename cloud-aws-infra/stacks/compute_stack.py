@@ -30,11 +30,13 @@ class ComputeStack(Stack):
         self.vpc = vpc
         self.sg = ec2_sg
 
-        env = self.node.try_get_context(Constants.DEPLOYMENT_ENVIRONMENT_KEY)
+        env = self.node.try_get_context(
+            Constants.DEPLOYMENT_ENVIRONMENT_KEY
+        )
 
-        # ----------------------------
+        # =========================================================
         # IAM ROLE
-        # ----------------------------
+        # =========================================================
         self.instance_role = iam.Role(
             self,
             formulate_resource_id(self, "EC2Role"),
@@ -47,8 +49,11 @@ class ComputeStack(Stack):
             ),
         )
 
-        # SSM Session Manager
-        # (SSH alternative — more secure)
+        # ---------------------------------------------------------
+        # SSM SESSION MANAGER
+        # Enables browser/CLI shell access
+        # Replaces SSH + KeyPairs
+        # ---------------------------------------------------------
         self.instance_role.add_managed_policy(
             iam.ManagedPolicy
             .from_aws_managed_policy_name(
@@ -56,7 +61,9 @@ class ComputeStack(Stack):
             )
         )
 
-        # ECR pull
+        # ---------------------------------------------------------
+        # ECR PULL ACCESS
+        # ---------------------------------------------------------
         self.instance_role.add_managed_policy(
             iam.ManagedPolicy
             .from_aws_managed_policy_name(
@@ -64,7 +71,9 @@ class ComputeStack(Stack):
             )
         )
 
-        # S3 media bucket access
+        # ---------------------------------------------------------
+        # S3 ACCESS
+        # ---------------------------------------------------------
         self.instance_role.add_managed_policy(
             iam.ManagedPolicy
             .from_aws_managed_policy_name(
@@ -72,8 +81,9 @@ class ComputeStack(Stack):
             )
         )
 
-        # Secrets Manager read
-        # (for production secret injection)
+        # ---------------------------------------------------------
+        # SECRETS MANAGER ACCESS
+        # ---------------------------------------------------------
         self.instance_role.add_managed_policy(
             iam.ManagedPolicy
             .from_aws_managed_policy_name(
@@ -81,7 +91,9 @@ class ComputeStack(Stack):
             )
         )
 
-        # CloudWatch logs
+        # ---------------------------------------------------------
+        # CLOUDWATCH LOGS
+        # ---------------------------------------------------------
         self.instance_role.add_managed_policy(
             iam.ManagedPolicy
             .from_aws_managed_policy_name(
@@ -89,179 +101,184 @@ class ComputeStack(Stack):
             )
         )
 
-        # ----------------------------
+        # =========================================================
         # USER DATA
-        # Runs once on first boot
-        # Sets up Docker + Compose
-        # Mounts EBS data volume
-        # ----------------------------
+        # =====================================================
+        # EBS DATA VOLUME SETUP (FIXED FOR NVME INSTANCES)
+        # =====================================================
+
         user_data = ec2.UserData.for_linux()
         user_data.add_commands(
-            # System update
+
+            # -----------------------------------------------------
+            # SYSTEM UPDATE
+            # -----------------------------------------------------
             "yum update -y",
 
-            # Install Docker
+            # -----------------------------------------------------
+            # INSTALL DOCKER
+            # -----------------------------------------------------
             "yum install -y docker",
             "systemctl enable docker",
             "systemctl start docker",
-            # Add ec2-user to docker group
-            # (so ec2-user can run docker
-            # without sudo)
+
             "usermod -a -G docker ec2-user",
 
-            # Install Docker Compose plugin
-            # (modern v2 style: docker compose)
+            # -----------------------------------------------------
+            # INSTALL DOCKER COMPOSE V2
+            # -----------------------------------------------------
             "mkdir -p /usr/local/lib/docker/cli-plugins",
+
             (
-                "curl -SL https://github.com/"
-                "docker/compose/releases/latest/"
-                "download/docker-compose-linux-"
-                "x86_64 "
+                "curl -SL "
+                "https://github.com/docker/compose/"
+                "releases/latest/download/"
+                "docker-compose-linux-x86_64 "
                 "-o /usr/local/lib/docker/"
                 "cli-plugins/docker-compose"
             ),
+
             (
-                "chmod +x /usr/local/lib/docker/"
+                "chmod +x "
+                "/usr/local/lib/docker/"
                 "cli-plugins/docker-compose"
             ),
 
-            # Install useful tools
+            # -----------------------------------------------------
+            # INSTALL UTILS
+            # -----------------------------------------------------
             "yum install -y git jq aws-cli",
 
-            # ----------------------------
-            # EBS DATA VOLUME SETUP
-            # The 20GB volume is attached
-            # as /dev/sdh (or /dev/xvdh
-            # on newer kernels)
-            # We format and mount it to
-            # /data for postgres data
-            # ----------------------------
+            # =====================================================
+            # EBS DATA VOLUME (NVME SAFE MOUNT LOGIC)
+            # =====================================================
 
-            # Wait for volume to appear
+            # Wait for disk to appear
             "sleep 10",
 
-            # Check if volume needs formatting
-            # (only format on first boot)
-            (
-                "if ! blkid /dev/xvdh; then "
-                "mkfs -t xfs /dev/xvdh; "
-                "fi"
-            ),
+            # Detect second disk automatically (your nvme1n1)
+            "DATA_DEVICE=$(lsblk -ln -o NAME,TYPE | awk '$2==\"disk\" && $1 ~ /nvme1n1/ {print \"/dev/\"$1}')",
+
+            # Fallback safety (if detection fails)
+            "if [ -z \"$DATA_DEVICE\" ]; then DATA_DEVICE=/dev/nvme1n1; fi",
+
+            # Format only if not already formatted
+            "if ! blkid $DATA_DEVICE; then mkfs -t xfs $DATA_DEVICE; fi",
 
             # Create mount point
+            "mkdir -p /data",
+
+            # Mount volume
+            "mount $DATA_DEVICE /data",
+
+            # Persist using UUID (MOST RELIABLE)
+            "UUID=$(blkid -s UUID -o value $DATA_DEVICE)",
+
+            "grep -q \"$UUID\" /etc/fstab || echo \"UUID=$UUID /data xfs defaults,nofail 0 2\" >> /etc/fstab",
+
+            # Create postgres directory
             "mkdir -p /data/postgres",
 
-            # Mount the volume
-            "mount /dev/xvdh /data",
-
-            # Make mount persistent across reboots
-            # Add to /etc/fstab
-            (
-                "echo '/dev/xvdh /data xfs "
-                "defaults,nofail 0 2' "
-                ">> /etc/fstab"
-            ),
-
-            # Create postgres data directory
-            # with correct permissions
-            "mkdir -p /data/postgres",
+            # Permissions
             "chmod 777 /data/postgres",
 
-            # Create app directory structure
+            # =====================================================
+            # APP DIRECTORY
+            # =====================================================
             "mkdir -p /opt/ridelist",
-            "chown ec2-user:ec2-user "
-            "/opt/ridelist",
+            "chown -R ec2-user:ec2-user /opt/ridelist",
 
-            # ----------------------------
-            # SIGNAL THAT SETUP IS DONE
-            # Write a marker file so we
-            # can check setup completed
-            # ----------------------------
-            "echo 'RIDELIST_SETUP_COMPLETE' "
-            "> /opt/ridelist/.setup_complete",
+            # =====================================================
+            # SETUP COMPLETE MARKER
+            # =====================================================
+            "echo 'RIDELIST_SETUP_COMPLETE' > /opt/ridelist/.setup_complete",
 
             "echo 'User data script completed'",
         )
 
-        # ----------------------------
-        # KEY PAIR FOR SSH ACCESS
-        # Creates a key pair in AWS
-        # Download the private key from
-        # AWS Console → EC2 → Key Pairs
-        # ----------------------------
-        key_pair = ec2.KeyPair(
-            self,
-            formulate_resource_id(self, "KeyPair"),
-            key_pair_name=f"ridelist-{env}-key",
-        )
-
-        # ----------------------------
+        # =========================================================
         # EC2 INSTANCE
-        # ----------------------------
+        # =========================================================
         self.instance = ec2.Instance(
             self,
             formulate_resource_id(
-                self, "ComputeInstance"
+                self,
+                "ComputeInstance"
             ),
+
             instance_type=ec2.InstanceType(
                 "t3.micro"
             ),
+
             machine_image=(
                 ec2.MachineImage
                 .latest_amazon_linux2023()
             ),
+
             vpc=self.vpc,
+
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PUBLIC,
                 **(
-                    {"availability_zones": [self.vpc.availability_zones[0]]}
+                    {
+                        "availability_zones": [
+                            self.vpc.availability_zones[0]
+                        ]
+                    }
                     if len(self.vpc.availability_zones) == 1
                     else {}
                 ),
             ),
+
             security_group=self.sg,
+
             role=self.instance_role,
+
             user_data=user_data,
-            key_pair=key_pair,
-            # Encrypt the root volume
+
+            # -----------------------------------------------------
+            # ROOT VOLUME
+            # -----------------------------------------------------
             block_devices=[
                 ec2.BlockDevice(
                     device_name="/dev/xvda",
-                    volume=ec2.BlockDeviceVolume
-                    .ebs(
+
+                    volume=ec2.BlockDeviceVolume.ebs(
                         20,
+
                         volume_type=(
-                            ec2.EbsDeviceVolumeType
-                            .GP3
+                            ec2.EbsDeviceVolumeType.GP3
                         ),
+
                         encrypted=True,
                     ),
                 )
             ],
         )
 
-        # ----------------------------
+        # =========================================================
         # EBS DATA VOLUME
-        # Separate from root volume
-        # Postgres data lives here
-        # Survives instance replacement
-        # ----------------------------
+        # =========================================================
         data_volume = ec2.Volume(
             self,
             formulate_resource_id(
-                self, "DataVolume"
+                self,
+                "DataVolume"
             ),
-            availability_zone=self.vpc.availability_zones[0],
+
+            availability_zone=(
+                self.vpc.availability_zones[0]
+            ),
+
             size=size.gibibytes(20),
+
             volume_type=(
                 ec2.EbsDeviceVolumeType.GP3
             ),
+
             encrypted=True,
+
             removal_policy=(
-                # Keep data volume even if
-                # stack is destroyed
-                # Change to DESTROY for
-                # disposable test envs
                 removal_policy.RETAIN
                 if env == "prod"
                 else removal_policy.DESTROY
@@ -270,91 +287,82 @@ class ComputeStack(Stack):
 
         data_volume.grant_attach_volume(
             self.instance_role
-            #,[self.instance]
         )
 
         ec2.CfnVolumeAttachment(
             self,
             formulate_resource_id(
-                self, "DataVolumeAttach"
+                self,
+                "DataVolumeAttach"
             ),
+
             volume_id=data_volume.volume_id,
+
             instance_id=self.instance.instance_id,
+
             device="/dev/sdh",
         )
 
-        # ----------------------------
+        # =========================================================
         # ELASTIC IP
-        # Static public IP
-        # Survives instance stop/start
-        # Point your DNS here
-        # ----------------------------
+        # =========================================================
         self.eip = ec2.CfnEIP(
             self,
             formulate_resource_id(
-                self, "ElasticIP"
+                self,
+                "ElasticIP"
             ),
-            # Keep EIP even after destroy
-            # Prevents DNS breaking
-            # if stack is recreated
         )
 
         ec2.CfnEIPAssociation(
             self,
             formulate_resource_id(
-                self, "EIPAssoc"
+                self,
+                "EIPAssoc"
             ),
+
             eip=self.eip.ref,
+
             instance_id=self.instance.instance_id,
         )
 
-        # ----------------------------
+        # =========================================================
         # SSM PARAMETER STORE
-        # Store instance details for
-        # CI/CD and Ansible to use
-        # ----------------------------
+        # Infrastructure metadata
+        # =========================================================
         ssm.StringParameter(
             self,
             formulate_resource_id(
-                self, "InstanceIdParam"
+                self,
+                "InstanceIdParam"
             ),
+
             parameter_name=(
                 f"/ridelist/{env}"
                 f"/compute/ec2/instance-id"
             ),
+
             string_value=self.instance.instance_id,
         )
 
         ssm.StringParameter(
             self,
             formulate_resource_id(
-                self, "ElasticIPParam"
+                self,
+                "ElasticIPParam"
             ),
+
             parameter_name=(
                 f"/ridelist/{env}"
                 f"/compute/ec2/elastic-ip"
             ),
+
             string_value=self.eip.ref,
         )
 
-        ssm.StringParameter(
-            self,
-            formulate_resource_id(self, "KeyPairPrivateKeyParam"),
-            parameter_name=(
-                f"/ridelist/{env}"
-                f"/compute/ec2/keypair-secret-arn"
-            ),
-            string_value=(
-                f"arn:aws:secretsmanager:{self.region}"
-                f":{self.account}:secret:/ec2/keypair/"
-                f"{key_pair.key_pair_id}"
-            ),
-        )
-
-        # ----------------------------
+        # =========================================================
         # CFN OUTPUTS
-        # Shown after cdk deploy
-        # ----------------------------
+        # =========================================================
         provision_cfnoutput(
             self,
             "InstanceId",
@@ -369,13 +377,9 @@ class ComputeStack(Stack):
 
         provision_cfnoutput(
             self,
-            "KeyPairName",
-            key_pair.key_pair_name,
-        )
-
-        provision_cfnoutput(
-            self,
-            "SSHCommand",
-            f"ssh -i ridelist-{env}-key.pem "
-            f"ec2-user@{self.eip.ref}",
+            "SSMConnectCommand",
+            (
+                "aws ssm start-session "
+                f"--target {self.instance.instance_id}"
+            ),
         )

@@ -6,7 +6,7 @@ echo "Time: $(date)"
 
 # 1. Inject secrets from AWS Secrets Manager
 echo "Injecting secrets..."
-bash /opt/ridelist/scripts/inject-secrets.sh
+bash /opt/ridelist/scripts/config-loader.sh
 
 # 2. Authenticate Docker to ECR
 echo "Authenticating to ECR..."
