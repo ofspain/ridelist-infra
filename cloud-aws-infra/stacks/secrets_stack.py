@@ -173,3 +173,24 @@ class SecretsStack(Stack):
                     ),
             },
         )
+
+        # =========================================================
+        # FRONTEND / BACKEND IMAGE SECRET
+        # =========================================================
+        # Mirrors future Kubernetes Secret:
+        #
+        # ECR_FRONTEND_IMAGE
+        # ECR_BACKEND_IMAGE
+        #
+        # Values can be injected later via GitHub Actions
+        # =========================================================
+        self.image_secret = secretsmanager.Secret(
+            self,
+            formulate_resource_id(self, "EcrImagesSecret"),
+            secret_name=f"/ridelist/{env}/ecr-images",
+            description=f"RideList frontend and backend ECR images for {env}",
+            secret_object_value={
+                "ECR_FRONTEND_IMAGE": secret_value.unsafe_plain_text(""),
+                "ECR_BACKEND_IMAGE": secret_value.unsafe_plain_text(""),
+            },
+        )

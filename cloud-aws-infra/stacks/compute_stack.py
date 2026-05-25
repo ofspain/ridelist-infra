@@ -101,32 +101,28 @@ class ComputeStack(Stack):
             )
         )
 
-        # =========================================================
-        # USER DATA
-        # =====================================================
-        # EBS DATA VOLUME SETUP (FIXED FOR NVME INSTANCES)
-        # =====================================================
-
         user_data = ec2.UserData.for_linux()
+
         user_data.add_commands(
 
-            # -----------------------------------------------------
+            # =====================================================
             # SYSTEM UPDATE
-            # -----------------------------------------------------
+            # =====================================================
             "yum update -y",
 
-            # -----------------------------------------------------
+            # =====================================================
             # INSTALL DOCKER
-            # -----------------------------------------------------
+            # =====================================================
             "yum install -y docker",
+
             "systemctl enable docker",
             "systemctl start docker",
 
             "usermod -a -G docker ec2-user",
 
-            # -----------------------------------------------------
+            # =====================================================
             # INSTALL DOCKER COMPOSE V2
-            # -----------------------------------------------------
+            # =====================================================
             "mkdir -p /usr/local/lib/docker/cli-plugins",
 
             (
@@ -144,52 +140,71 @@ class ComputeStack(Stack):
                 "cli-plugins/docker-compose"
             ),
 
-            # -----------------------------------------------------
-            # INSTALL UTILS
-            # -----------------------------------------------------
-            "yum install -y git jq aws-cli",
+            # =====================================================
+            # INSTALL UTILITIES
+            # =====================================================
+            "yum install -y git jq aws-cli certbot",
 
             # =====================================================
-            # EBS DATA VOLUME (NVME SAFE MOUNT LOGIC)
+            # LETSENCRYPT + CERTBOT DIRECTORIES
             # =====================================================
 
-            # Wait for disk to appear
+            # Create certbot webroot
+            "mkdir -p /var/www/certbot",
+
+            # Ensure letsencrypt directory exists
+            "mkdir -p /etc/letsencrypt",
+
+            # Permissions
+            "chmod 755 /var/www/certbot",
+            "chmod 755 /etc/letsencrypt",
+
+            # =====================================================
+            # EBS DATA VOLUME SETUP
+            # =====================================================
+
+            # Wait for EBS device
             "sleep 10",
 
-            # Detect second disk automatically (your nvme1n1)
+            # Detect NVME EBS disk
             "DATA_DEVICE=$(lsblk -ln -o NAME,TYPE | awk '$2==\"disk\" && $1 ~ /nvme1n1/ {print \"/dev/\"$1}')",
 
-            # Fallback safety (if detection fails)
+            # Fallback
             "if [ -z \"$DATA_DEVICE\" ]; then DATA_DEVICE=/dev/nvme1n1; fi",
 
-            # Format only if not already formatted
+            # Format if needed
             "if ! blkid $DATA_DEVICE; then mkfs -t xfs $DATA_DEVICE; fi",
 
             # Create mount point
             "mkdir -p /data",
 
-            # Mount volume
+            # Mount
             "mount $DATA_DEVICE /data",
 
-            # Persist using UUID (MOST RELIABLE)
+            # Persist mount
             "UUID=$(blkid -s UUID -o value $DATA_DEVICE)",
 
-            "grep -q \"$UUID\" /etc/fstab || echo \"UUID=$UUID /data xfs defaults,nofail 0 2\" >> /etc/fstab",
+            (
+                "grep -q \"$UUID\" /etc/fstab || "
+                "echo \"UUID=$UUID /data xfs defaults,nofail 0 2\" >> /etc/fstab"
+            ),
 
-            # Create postgres directory
+            # =====================================================
+            # POSTGRES DATA DIRECTORY
+            # =====================================================
             "mkdir -p /data/postgres",
 
-            # Permissions
             "chmod 777 /data/postgres",
 
             # =====================================================
-            # APP DIRECTORY
+            # APPLICATION DIRECTORY
             # =====================================================
             "mkdir -p /opt/ridelist",
+
             "chown -R ec2-user:ec2-user /opt/ridelist",
 
             # =====================================================
-            # CONFIG LOADER SCRIPT (FIXED HEREDOC)
+            # CONFIG LOADER SCRIPT
             # =====================================================
 
             (
@@ -219,12 +234,30 @@ class ComputeStack(Stack):
                 "echo 'DONE'\n"
                 "EOF\n"
             ),
+
             "chmod +x /opt/ridelist/config-loader.sh",
+
             "chown ec2-user:ec2-user /opt/ridelist/config-loader.sh",
-            "ENVIRONMENT=test /opt/ridelist/config-loader.sh",
 
             # =====================================================
-            # SETUP COMPLETE MARKER
+            # ENVIRONMENT FILE
+            # =====================================================
+
+            (
+                    "echo 'ENVIRONMENT=" +
+                    self.node.try_get_context(Constants.DEPLOYMENT_ENVIRONMENT_KEY) +
+                    "' > /opt/ridelist/.env.runtime"
+            ),
+
+            "chown ec2-user:ec2-user /opt/ridelist/.env.runtime",
+
+            # =====================================================
+            # LOAD ENV CONFIG
+            # =====================================================
+            "/opt/ridelist/config-loader.sh",
+
+            # =====================================================
+            # COMPLETE MARKER
             # =====================================================
             "echo 'RIDELIST_SETUP_COMPLETE' > /opt/ridelist/.setup_complete",
 
