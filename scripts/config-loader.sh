@@ -17,6 +17,7 @@ SECRETS=(
   "app-config"
   "smtp"
   "aws"
+  "ecr-images"
 )
 
 for SECRET in "${SECRETS[@]}"; do
