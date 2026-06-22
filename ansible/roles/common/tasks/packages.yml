@@ -1,0 +1,9 @@
+- name: Update system packages
+  yum:
+    name: "*"
+    state: latest
+
+- name: Install base packages
+  yum:
+    name: "{{ common_packages }}"
+    state: present

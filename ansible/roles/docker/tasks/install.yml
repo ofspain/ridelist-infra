@@ -1,0 +1,23 @@
+- name: Install Docker
+  yum:
+    name: docker
+    state: present
+
+- name: Enable Docker service
+  systemd:
+    name: docker
+    enabled: yes
+    state: started
+
+
+- name: Create CLI plugins directory
+  file:
+    path: /usr/local/lib/docker/cli-plugins
+    state: directory
+    mode: "0755"
+
+- name: Download Docker Compose v2
+  get_url:
+    url: https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64
+    dest: /usr/local/lib/docker/cli-plugins/docker-compose
+    mode: "0755"

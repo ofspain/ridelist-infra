@@ -1,0 +1,54 @@
+---
+# =====================================================
+# Ensure application root exists
+# =====================================================
+
+- name: Ensure application root exists
+  file:
+    path: "{{ application_root }}"
+    state: directory
+    mode: "0755"
+
+# =====================================================
+# Runtime Environment
+# =====================================================
+
+- name: Deploy runtime environment file
+  template:
+    src: env.runtime.j2
+    dest: "{{ runtime_file }}"
+    mode: "0644"
+
+# =====================================================
+# Secret Definitions
+# =====================================================
+
+- name: Deploy secret list
+  template:
+    src: secrets.list.j2
+    dest: "{{ secret_list_file }}"
+    mode: "0644"
+
+# =====================================================
+# Config Loader
+# =====================================================
+
+- name: Deploy configuration loader
+  template:
+    src: config-loader.sh.j2
+    dest: "{{ config_loader_file }}"
+    mode: "0755"
+
+# =====================================================
+# Validate Assets
+# =====================================================
+
+- name: Validate secret assets
+  import_tasks: validate.yml
+
+# =====================================================
+# Generate reload
+# =====================================================
+
+# - name: Generate environment configuration
+#   import_tasks: reload.yml

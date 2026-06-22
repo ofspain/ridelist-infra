@@ -1,0 +1,12 @@
+- name: Check Docker version
+  command: docker --version
+  register: docker_version
+  changed_when: false
+
+- name: Check Docker Compose version
+  command: docker compose version
+  register: compose_version
+  changed_when: false
+
+- name: Run hello-world container test
+  command: docker run --rm hello-world

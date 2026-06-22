@@ -1,0 +1,54 @@
+---
+- name: Read SSM parameter {{ parameter_name }}
+  shell: >
+    aws ssm get-parameter
+    --name "{{ parameter_name }}"
+    --query Parameter.Value
+    --output text
+    --region {{ aws_region }}
+  register: ssm_parameter_result
+  changed_when: false
+
+- name: Validate SSM parameter {{ parameter_name }}
+  assert:
+    that:
+      - ssm_parameter_result.stdout | trim | length > 0
+    fail_msg: >
+      SSM parameter {{ parameter_name }}
+      returned an empty value.
+
+- name: Try parsing parameter as JSON
+  set_fact:
+    __parameter_json: >-
+      {{
+        ssm_parameter_result.stdout
+        | trim
+        | from_json
+      }}
+  ignore_errors: true
+
+- name: Export JSON parameter
+  set_fact:
+    "{{ fact_name }}": >-
+      {{
+        __parameter_json.values()
+        | list
+        | first
+      }}
+  when:
+    - __parameter_json is defined
+    - __parameter_json is mapping
+
+- name: Export plain string parameter
+  set_fact:
+    "{{ fact_name }}": >-
+      {{
+        ssm_parameter_result.stdout
+        | trim
+      }}
+  when: vars[fact_name] is not defined
+
+- name: Debug {{ fact_name }}
+  debug:
+    msg:
+      - "{{ fact_name }}={{ vars[fact_name] }}"

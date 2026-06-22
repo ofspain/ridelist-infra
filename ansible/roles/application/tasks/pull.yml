@@ -1,0 +1,16 @@
+- name: Load environment file
+  shell: cat /opt/ridelist/.env
+  register: env_file
+  changed_when: false
+
+- name: Authenticate Docker to ECR
+  shell: >
+    aws ecr get-login-password
+    --region eu-west-1
+    | docker login --username AWS --password-stdin {{ aws_account_id }}.dkr.ecr.eu-west-1.amazonaws.com
+
+- name: Pull backend image
+  shell: docker pull $(grep ECR_BACKEND_IMAGE /opt/ridelist/.env | cut -d '=' -f2)
+
+- name: Pull frontend image
+  shell: docker pull $(grep ECR_FRONTEND_IMAGE /opt/ridelist/.env | cut -d '=' -f2)

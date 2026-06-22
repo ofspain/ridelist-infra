@@ -1,0 +1,16 @@
+---
+# =====================================================
+# NGINX ROLE (DOCKER-BASED)
+# Responsibility: Render configs only
+# =====================================================
+
+- name: Ensure nginx config directory exists
+  file:
+    path: "{{ application_root }}/nginx"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0755"
+
+- name: Render nginx configuration files
+  import_tasks: render.yml

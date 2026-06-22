@@ -1,0 +1,36 @@
+# =====================================================
+# Environment
+# =====================================================
+
+deployment_env: test
+
+# =====================================================
+# AWS Resources
+# =====================================================
+
+s3_bucket_name: ridelist-media-test
+
+# =====================================================
+# Secrets/Params Manager Configuration
+# =====================================================
+ridelist_required_secrets:
+  - database
+  - jwt
+
+ridelist_optional_secrets:
+  - smtp
+  - aws
+
+ridelist_required_parameters:
+  - app-config
+  - ecr-images
+  - infrastructure/aws-region
+  - s3-bucket-name
+
+# =====================================================
+# Domain Names
+# =====================================================
+
+domain_name: ofspain.click
+
+api_domain_name: api.ofspain.click

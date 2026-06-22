@@ -1,0 +1,16 @@
+- name: Create application root
+  file:
+    path: "{{ application_root }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0755"
+
+- name: Create base directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0755"
+  loop: "{{ base_dirs }}"

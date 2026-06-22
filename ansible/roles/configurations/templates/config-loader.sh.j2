@@ -1,0 +1,180 @@
+#!/bin/bash
+
+set -euo pipefail
+
+BASE_DIR="{{ application_root }}"
+
+RUNTIME_FILE="${BASE_DIR}/.env.runtime"
+SECRET_LIST_FILE="${BASE_DIR}/secret.list"
+OUTPUT_FILE="${BASE_DIR}/.env"
+
+echo "========================================="
+echo "RideList Configuration Loader"
+echo "========================================="
+
+# ==========================================================
+# Runtime Configuration
+# ==========================================================
+
+if [ ! -f "$RUNTIME_FILE" ]; then
+    echo "ERROR: Missing runtime file:"
+    echo "$RUNTIME_FILE"
+    exit 1
+fi
+
+source "$RUNTIME_FILE"
+
+ENVIRONMENT="${ENVIRONMENT:?ENVIRONMENT not defined}"
+AWS_REGION="${AWS_REGION:?AWS_REGION not defined}"
+
+echo "Environment: ${ENVIRONMENT}"
+echo "Region: ${AWS_REGION}"
+
+# ==========================================================
+# Secret List Validation
+# ==========================================================
+
+if [ ! -f "$SECRET_LIST_FILE" ]; then
+    echo "ERROR: Missing secret list:"
+    echo "$SECRET_LIST_FILE"
+    exit 1
+fi
+
+# ==========================================================
+# Create Fresh .env
+# ==========================================================
+
+rm -f "$OUTPUT_FILE"
+touch "$OUTPUT_FILE"
+
+# ==========================================================
+# Load Configuration Entries
+# ==========================================================
+
+while IFS='|' read -r TYPE NAME MODE
+do
+    [ -z "$TYPE" ] && continue
+
+    if [[ "$TYPE" =~ ^# ]]; then
+        continue
+    fi
+
+    PATH_NAME="/ridelist/${ENVIRONMENT}/${NAME}"
+
+    echo
+    echo "Loading ${PATH_NAME}"
+
+    # ======================================================
+    # Secrets Manager
+    # ======================================================
+
+    if [ "$TYPE" = "secret" ]; then
+
+        if aws secretsmanager describe-secret \
+            --secret-id "$PATH_NAME" \
+            >/dev/null 2>&1
+        then
+
+            VALUE=$(
+                aws secretsmanager get-secret-value \
+                    --secret-id "$PATH_NAME" \
+                    --query SecretString \
+                    --output text
+            )
+
+            echo "$VALUE" \
+                | jq -r \
+                  'to_entries[] | "\(.key)=\(.value)"' \
+                >> "$OUTPUT_FILE"
+
+            continue
+        fi
+
+        if [ "$MODE" = "required" ]; then
+            echo
+            echo "ERROR:"
+            echo "Required secret missing:"
+            echo "$PATH_NAME"
+            exit 1
+        fi
+
+        echo "Optional secret missing:"
+        echo "$PATH_NAME"
+
+        continue
+    fi
+
+    # ======================================================
+    # Parameter Store
+    # ======================================================
+
+    if [ "$TYPE" = "parameter" ]; then
+
+        if aws ssm get-parameter \
+            --name "$PATH_NAME" \
+            >/dev/null 2>&1
+        then
+
+            VALUE=$(
+                aws ssm get-parameter \
+                    --name "$PATH_NAME" \
+                    --query Parameter.Value \
+                    --output text
+            )
+
+            echo "$VALUE" \
+                | jq -r \
+                  'to_entries[] | "\(.key)=\(.value)"' \
+                >> "$OUTPUT_FILE"
+
+            continue
+        fi
+
+        if [ "$MODE" = "required" ]; then
+            echo
+            echo "ERROR:"
+            echo "Required parameter missing:"
+            echo "$PATH_NAME"
+            exit 1
+        fi
+
+        echo "Optional parameter missing:"
+        echo "$PATH_NAME"
+
+        continue
+    fi
+
+    echo
+    echo "ERROR:"
+    echo "Unknown configuration type:"
+    echo "$TYPE"
+
+    exit 1
+
+done < "$SECRET_LIST_FILE"
+
+# ==========================================================
+# Final Validation
+# ==========================================================
+
+if [ ! -s "$OUTPUT_FILE" ]; then
+    echo
+    echo "ERROR: Generated .env is empty"
+    exit 1
+fi
+
+# Remove duplicate keys if any
+sort -u "$OUTPUT_FILE" -o "$OUTPUT_FILE"
+
+chmod 600 "$OUTPUT_FILE"
+
+echo
+echo "Generated:"
+echo "$OUTPUT_FILE"
+
+echo
+echo "Variable count:"
+grep -c "=" "$OUTPUT_FILE"
+
+echo
+echo "Configuration load complete."

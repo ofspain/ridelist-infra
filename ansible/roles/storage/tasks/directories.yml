@@ -1,0 +1,12 @@
+---
+- name: Create postgres directory
+  file:
+    path: "{{ postgres_data_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Create uploads directory
+  file:
+    path: "{{ uploads_dir }}"
+    state: directory
+    mode: "0755"

@@ -1,0 +1,72 @@
+---
+- name: RideList EC2 Bootstrap Orchestrator
+  hosts: all
+  become: true
+
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/{{ deployment_env }}.yml
+
+  pre_tasks:
+
+    - name: Confirm target environment
+      debug:
+        msg: "Bootstrapping environment: {{ deployment_env }}"
+
+    - name: Validate AWS region
+      fail:
+        msg: "AWS region not defined"
+      when: aws_region is not defined
+
+  roles:
+
+    # =====================================================
+    # 1. COMMON RUNS (install all common packages and curate paths required elsewhere)
+    # =====================================================
+    - role: common
+
+    # =====================================================
+    # 2. Prompt for DNS POINT TO IP
+    # =====================================================
+    - role: dns
+
+
+    # =====================================================
+    # 3. STORAGE LAYER (EBS / /data)
+    # =====================================================
+    - role: storage
+
+    # =====================================================
+    # 4. DOCKER + BASE RUNTIME
+    # =====================================================
+    - role: docker
+
+    # =====================================================
+    # 5. SECRETS LAYER (AWS Secrets → .env)
+    # =====================================================
+    - role: configurations
+
+    # =====================================================
+    # 6. NGINX (routing brain)
+    # =====================================================
+    - role: nginx
+
+    # =====================================================
+    # 7. APPLICATION STACK (compose + images)
+    # =====================================================
+    - role: application
+
+    # =====================================================
+    # 8. CERTBOT (SSL issuance)
+    # =====================================================
+    - role: certbot
+
+  post_tasks:
+
+    - name: Print deployment summary
+      debug:
+        msg:
+          - "Environment: {{ deployment_env }}"
+          - "Domain: {{ domain_name }}"
+          - "API: {{ api_domain_name }}"
+          - "Storage: {{ data_root }}"

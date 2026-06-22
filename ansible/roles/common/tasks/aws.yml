@@ -1,0 +1,12 @@
+- name: Check AWS CLI exists
+  command: aws --version
+  register: aws_cli_check
+  changed_when: false
+  failed_when: aws_cli_check.rc != 0
+
+- name: Verify SSM agent running
+  systemd:
+    name: amazon-ssm-agent
+    state: started
+    enabled: yes
+  ignore_errors: yes

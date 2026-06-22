@@ -1,0 +1,15 @@
+---
+- name: Validate required application files
+  stat:
+    path: "{{ item }}"
+  register: required_files
+  loop:
+    - "{{ runtime_file }}"
+    - "{{ secret_list_file }}"
+    - "{{ config_loader_file }}"
+
+- name: Fail if required file is missing
+  fail:
+    msg: "Missing required file: {{ item.item }}"
+  when: not item.stat.exists
+  loop: "{{ required_files.results }}"

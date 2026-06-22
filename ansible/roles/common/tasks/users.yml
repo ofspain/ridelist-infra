@@ -1,0 +1,5 @@
+- name: Ensure application user exists
+  user:
+    name: "{{ app_user }}"
+    state: present
+    create_home: yes

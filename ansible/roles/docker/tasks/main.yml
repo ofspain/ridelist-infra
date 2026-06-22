@@ -1,0 +1,8 @@
+- name: Install Docker
+  import_tasks: install.yml
+
+- name: Configure Docker runtime
+  import_tasks: configure.yml
+
+- name: Verify installation
+  import_tasks: verify.yml

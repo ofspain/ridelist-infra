@@ -1,0 +1,4 @@
+- name: restart system
+  reboot:
+    msg: "Reboot triggered by Ansible common role"
+    reboot_timeout: 300

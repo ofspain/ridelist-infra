@@ -1,0 +1,15 @@
+common_packages:
+  - unzip
+  - tar
+  - xfsprogs
+
+enable_epel: false
+
+create_app_user: true
+app_user: ec2-user
+
+base_dirs:
+  #- /opt/ridelist
+  - /data
+  - /data/postgres
+  - /data/uploads

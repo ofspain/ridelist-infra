@@ -1,0 +1,24 @@
+---
+env_file_path: "{{ application_root }}/.env"
+
+runtime_file: "{{ application_root }}/.env.runtime"
+
+secret_list_file: "{{ application_root }}/secret.list"
+
+config_loader_file: "{{ application_root }}/config-loader.sh"
+
+secrets_base_path: "/ridelist"
+
+required_secrets:
+  - database
+  - jwt
+
+optional_secrets:
+  - smtp
+  - aws
+
+required_parameters:
+  - app-config
+  - ecr-images
+  - infrastructure/aws-region
+  - s3-bucket-name

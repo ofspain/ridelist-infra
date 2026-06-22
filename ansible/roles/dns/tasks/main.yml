@@ -1,0 +1,2 @@
+- name: Install base packages
+  import_tasks: wait_for_dns.yml

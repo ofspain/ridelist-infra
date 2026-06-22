@@ -1,0 +1,119 @@
+- name: Render frontend route
+  template:
+    src: nginx.frontend.conf.j2
+    dest: /etc/nginx/conf.d/frontend.conf
+
+- name: Render api route
+  template:
+    src: nginx.backend.conf.j2
+    dest: /etc/nginx/conf.d/api.conf
+
+- name: Render nginx main config
+  template:
+    src: nginx.conf.j2
+    dest: "{{ application_root }}/nginx/nginx.conf"
+    mode: "0644"
+
+- name: Render frontend routing config
+  template:
+    src: nginx.frontend.conf.j2
+    dest: "{{ application_root }}/nginx/frontend.conf"
+    mode: "0644"
+
+- name: Render backend routing config
+  template:
+    src: nginx.backend.conf.j2
+    dest: "{{ application_root }}/nginx/backend.conf"
+    mode: "0644"
+
+
+
+ #Ansible Templates
+#        │
+#        ▼
+#application_root/nginx/
+#        │
+#        ▼
+#Docker Volume Mounts
+#        │
+#        ▼
+#/etc/nginx/nginx.conf
+#/etc/nginx/conf.d/frontend.conf
+#/etc/nginx/conf.d/backend.conf
+#        │
+#        ▼
+#Nginx Configuration Tree
+
+
+
+
+#Ansible templates
+#        ↓
+#{{ application_root }}/nginx/*.conf
+#        ↓
+#Docker volume mounts
+#        ↓
+#/etc/nginx/conf.d/*.conf   (inside container)
+#        ↓
+#include /etc/nginx/conf.d/*.conf
+#        ↓
+#Nginx loads those server blocks
+
+
+
+
+#So these tasks are necessary:
+#
+#- Render nginx main config
+#- Render frontend routing config
+#- Render backend routing config
+#What appears redundant
+#
+#These tasks:
+#
+#- name: Render frontend route
+#  template:
+#    src: nginx.frontend.conf.j2
+#    dest: /etc/nginx/conf.d/frontend.conf
+#
+#- name: Render api route
+#  template:
+#    src: nginx.backend.conf.j2
+#    dest: /etc/nginx/conf.d/api.conf
+#
+#render configs directly onto the host machine:
+#
+#/etc/nginx/conf.d/frontend.conf
+#/etc/nginx/conf.d/api.conf
+#
+#But your container does not mount those files.
+#
+#Instead it mounts:
+#
+#{{ application_root }}/nginx/frontend.conf
+#{{ application_root }}/nginx/backend.conf
+#
+#So unless there is a separate host-level Nginx service running, those first two tasks accomplish nothing for the containerized Nginx.
+#
+#I would remove them
+#
+#If the architecture is:
+#
+#Internet
+#    ↓
+#Docker Nginx
+#    ↓
+#frontend container
+#    ↓
+#backend container
+#
+#then keep only:
+#
+#- Render nginx main config
+#- Render frontend routing config
+#- Render backend routing config
+#
+#and delete:
+#
+#- Render frontend route
+#- Render api route

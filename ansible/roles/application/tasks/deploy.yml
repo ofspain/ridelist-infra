@@ -1,0 +1,121 @@
+---
+# =====================================================
+# Refresh Secrets
+# =====================================================
+
+- name: Load latest configuration from Secrets Manager
+  command: >
+    {{ application_root }}/config-loader.sh
+  environment:
+    ENVIRONMENT: "{{ deployment_env }}"
+
+# =====================================================
+# Verify Environment File Exists
+# =====================================================
+
+- name: Verify .env exists
+  stat:
+    path: "{{ application_root }}/.env"
+  register: env_file
+
+- name: Fail if .env is missing
+  fail:
+    msg: >
+      Environment file was not generated.
+      Check config-loader.sh execution.
+  when: not env_file.stat.exists
+
+# =====================================================
+# Read Deployment Images
+# =====================================================
+
+- name: Read backend image
+  shell: |
+    grep '^ECR_BACKEND_IMAGE=' {{ application_root }}/.env | cut -d'=' -f2-
+  register: backend_image
+  changed_when: false
+
+- name: Read frontend image
+  shell: |
+    grep '^ECR_FRONTEND_IMAGE=' {{ application_root }}/.env | cut -d'=' -f2-
+  register: frontend_image
+  changed_when: false
+
+# =====================================================
+# Validate Deployment Images
+# =====================================================
+
+- name: Ensure backend image is configured
+  assert:
+    that:
+      - backend_image.stdout | trim | length > 0
+    fail_msg: >
+      ECR_BACKEND_IMAGE is missing from .env
+
+- name: Ensure frontend image is configured
+  assert:
+    that:
+      - frontend_image.stdout | trim | length > 0
+    fail_msg: >
+      ECR_FRONTEND_IMAGE is missing from .env
+
+# =====================================================
+# Deployment Summary
+# =====================================================
+
+- name: Deployment summary
+  debug:
+    msg:
+      - "Backend Image: {{ backend_image.stdout }}"
+      - "Frontend Image: {{ frontend_image.stdout }}"
+
+# =====================================================
+# Login To ECR
+# =====================================================
+
+- name: Login to Amazon ECR
+  shell: |
+    aws ecr get-login-password \
+      --region {{ aws_region }} \
+      | docker login \
+          --username AWS \
+          --password-stdin \
+          {{ account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com
+  args:
+    executable: /bin/bash
+  register: ecr_login_result
+  changed_when: true
+
+# =====================================================
+# Pull Latest Images
+# =====================================================
+
+- name: Pull latest application images
+  command: >
+    docker compose
+    --env-file {{ application_root }}/.env
+    -f {{ application_root }}/docker-compose.yml
+    pull
+  register: compose_pull_result
+  changed_when: true
+
+# =====================================================
+# Deploy Containers
+# =====================================================
+
+- name: Start RideList stack
+  command: >
+    docker compose
+    --env-file {{ application_root }}/.env
+    -f {{ application_root }}/docker-compose.yml
+    up -d
+  register: compose_up_result
+  changed_when: true
+
+# =====================================================
+# Give Services Time To Start
+# =====================================================
+
+- name: Wait for startup
+  pause:
+    seconds: 20

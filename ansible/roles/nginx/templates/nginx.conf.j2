@@ -1,0 +1,19 @@
+events {}
+
+http {
+
+  include /etc/nginx/mime.types;
+  default_type application/octet-stream;
+
+  sendfile on;
+
+  upstream frontend {
+    server {{ frontend_container }}:{{ frontend_port }};
+  }
+
+  upstream backend {
+    server {{ backend_container }}:{{ backend_port }};
+  }
+
+  include /etc/nginx/conf.d/*.conf;
+}

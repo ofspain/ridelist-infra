@@ -1,0 +1,15 @@
+#- name: Create application root
+#  file:
+#    path: "{{ application_root }}"
+#    state: directory
+#    owner: ec2-user
+#    group: ec2-user
+#    mode: "0755"
+
+- name: Create db-init directory
+  file:
+    path: "{{ application_root }}/db-init"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0755"

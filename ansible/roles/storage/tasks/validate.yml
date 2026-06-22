@@ -1,0 +1,28 @@
+---
+- name: Verify mountpoint
+  command: mountpoint {{ data_root }}
+  changed_when: false
+
+- name: Verify postgres directory
+  stat:
+    path: "{{ postgres_data_dir }}"
+  register: postgres_dir
+
+- name: Fail if postgres dir missing
+  fail:
+    msg: >
+      Missing postgres directory:
+      {{ postgres_data_dir }}
+  when: not postgres_dir.stat.exists
+
+- name: Verify uploads directory
+  stat:
+    path: "{{ uploads_dir }}"
+  register: uploads_dir_stat
+
+- name: Fail if uploads dir missing
+  fail:
+    msg: >
+      Missing uploads directory:
+      {{ uploads_dir }}
+  when: not uploads_dir_stat.stat.exists

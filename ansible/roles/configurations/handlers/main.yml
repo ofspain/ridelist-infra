@@ -1,0 +1,4 @@
+- name: restart application stack
+  command: docker compose restart
+  args:
+    chdir: /opt/ridelist

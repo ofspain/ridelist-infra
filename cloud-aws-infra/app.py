@@ -4,7 +4,7 @@ import aws_cdk as cdk
 from stacks.network_stack import VPCStack
 from stacks.storage_stack import StorageStack
 from stacks.compute_stack import ComputeStack
-from stacks.secrets_stack import SecretsStack
+from stacks.config_stack import ConfigurationStack
 from stacks.utils.config_constants import Constants
 
 app = cdk.App()
@@ -50,9 +50,9 @@ storage_stack = StorageStack(
 )
 
 # 3. Secrets (independent of VPC)
-secrets_stack = SecretsStack(
+config_stack = ConfigurationStack(
     app,
-    f"RideList-{env_name}-Secrets",
+    f"RideList-{env_name}-Configs",
     env=aws_env,
 )
 

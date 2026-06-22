@@ -1,0 +1,21 @@
+nginx_user: nginx
+
+frontend_container: ridelist-frontend
+backend_container: ridelist-backend
+
+frontend_port: 3000
+backend_port: 8090
+
+domain_name: ofspain.click
+api_domain_name: api.ofspain.click
+
+nginx_container: ridelist-nginx
+
+cert_path: /etc/letsencrypt/live/{{ domain_name }}
+
+enable_gzip: true
+client_max_body_size: 20M
+
+# abstraction names (NOT containers anymore conceptually)
+frontend_upstream_name: frontend
+backend_upstream_name: backend

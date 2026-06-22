@@ -1,0 +1,6 @@
+galaxy_info:
+  role_name: docker
+  author: ridelist
+  description: Docker runtime layer for EC2 instances
+
+dependencies: []

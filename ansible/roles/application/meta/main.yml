@@ -1,0 +1,6 @@
+galaxy_info:
+  role_name: application
+  author: ridelist
+  description: Production deployment engine for backend/frontend stack
+
+dependencies: []

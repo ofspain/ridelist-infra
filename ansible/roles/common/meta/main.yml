@@ -1,0 +1,6 @@
+galaxy_info:
+  role_name: common
+  author: ridelist
+  description: Base OS configuration for EC2 instances
+
+dependencies: []

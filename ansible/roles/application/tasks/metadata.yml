@@ -1,0 +1,26 @@
+---
+# =====================================================
+# AWS ACCOUNT ID
+# =====================================================
+
+- name: Read AWS Account ID
+  import_role:
+    name: common
+    tasks_from: read-ssm-parameter
+  vars:
+    parameter_name: >-
+      /ridelist/{{ deployment_env }}/infrastructure/aws-account-id
+    fact_name: aws_account_id
+
+# =====================================================
+# AWS REGION
+# =====================================================
+
+- name: Read AWS Region
+  import_role:
+    name: common
+    tasks_from: read-ssm-parameter
+  vars:
+    parameter_name: >-
+      /ridelist/{{ deployment_env }}/infrastructure/aws-region
+    fact_name: aws_region_actual

@@ -1,0 +1,12 @@
+---
+- name: Check filesystem
+  command: blkid {{ data_device }}
+  register: blkid_result
+  failed_when: false
+  changed_when: false
+
+- name: Create xfs filesystem
+  filesystem:
+    dev: "{{ data_device }}"
+    fstype: xfs
+  when: blkid_result.rc != 0

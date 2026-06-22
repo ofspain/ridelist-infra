@@ -1,0 +1,13 @@
+---
+- name: Create mount point
+  file:
+    path: "{{ data_root }}"
+    state: directory
+    mode: "0755"
+
+- name: Mount volume
+  mount:
+    path: "{{ data_root }}"
+    src: "{{ data_device }}"
+    fstype: xfs
+    state: mounted

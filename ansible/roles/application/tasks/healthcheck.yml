@@ -1,0 +1,9 @@
+- name: Wait for backend container to become healthy
+  shell: >
+    docker inspect {{ backend_container }}
+    | jq -r '.[0].State.Health.Status'
+  register: backend_health
+  retries: 20
+  delay: 15
+  until: backend_health.stdout == "healthy"
+  changed_when: false

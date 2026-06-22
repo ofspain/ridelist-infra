@@ -1,0 +1,14 @@
+---
+- import_tasks: directories.yml
+
+- import_tasks: compose.yml
+
+- import_tasks: deploy.yml
+
+#- import_tasks: pull.yml
+
+- import_tasks: metadata.yml
+
+- import_tasks: validate.yml
+
+- import_tasks: healthcheck.yml

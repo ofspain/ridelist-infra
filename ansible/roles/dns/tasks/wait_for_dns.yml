@@ -1,0 +1,126 @@
+---
+- name: Check if certificate already exists
+  stat:
+    path: "/etc/letsencrypt/live/{{ domain_name }}/fullchain.pem"
+  register: cert_exists
+
+# =====================================================
+# Read Elastic IP from SSM
+# =====================================================
+
+- name: Read Elastic IP
+  shell: >
+    aws ssm get-parameter
+    --name "/ridelist/{{ deployment_env }}/compute/ec2/elastic-ip"
+    --query Parameter.Value
+    --output text
+    --region {{ aws_region }}
+  register: elastic_ip_result
+  changed_when: false
+  when: not cert_exists.stat.exists
+
+# =====================================================
+# Parse Elastic IP (supports JSON and plain strings)
+# =====================================================
+
+- name: Parse Elastic IP
+  import_role:
+    name: common
+    tasks_from: read-ssm-parameter
+  vars:
+    parameter_name: >-
+      /ridelist/{{ deployment_env }}/compute/ec2/elastic-ip
+    fact_name: elastic_ip
+  when: not cert_exists.stat.exists
+
+# =====================================================
+# Store Elastic IP
+# =====================================================
+
+- name: Store Elastic IP
+  set_fact:
+     elastic_ip: "{{ elastic_ip }}"
+  when: not cert_exists.stat.exists
+
+# =====================================================
+# Debug resolved Elastic IP
+# =====================================================
+
+- name: Debug resolved Elastic IP
+  debug:
+    msg:
+      - "elastic_ip=[{{ elastic_ip }}]"
+      - "length={{ elastic_ip | length }}"
+  when: not cert_exists.stat.exists
+
+# =====================================================
+# Display DNS Instructions
+# =====================================================
+
+- name: Pause for Cloudflare DNS configuration
+  pause:
+    prompt: |
+
+      ==========================================================
+      DNS CONFIGURATION REQUIRED
+      ==========================================================
+
+      Create/Update the following DNS records in Cloudflare:
+
+      Type: A
+      Name: @
+      Value: {{ elastic_ip }}
+
+      Type: A
+      Name: api
+      Value: {{ elastic_ip }}
+
+      Which corresponds to:
+
+      https://{{ domain_name }}
+      https://{{ api_domain_name }}
+
+      Wait for DNS propagation.
+
+      Press ENTER once both domains resolve to:
+
+      {{ elastic_ip }}
+
+      ==========================================================
+  when: not cert_exists.stat.exists
+
+# =====================================================
+# Verify Domain Resolution
+# =====================================================
+
+- name: Verify {{ domain_name }} resolves correctly
+  shell: |
+    dig +short {{ domain_name }} | tail -n1
+  register: domain_resolution
+  retries: 30
+  delay: 10
+  until: domain_resolution.stdout | trim == elastic_ip
+  changed_when: false
+  when: not cert_exists.stat.exists
+
+- name: Verify {{ api_domain_name }} resolves correctly
+  shell: |
+    dig +short {{ api_domain_name }} | tail -n1
+  register: api_domain_resolution
+  retries: 30
+  delay: 10
+  until: api_domain_resolution.stdout | trim == elastic_ip
+  changed_when: false
+  when: not cert_exists.stat.exists
+
+# =====================================================
+# Debug
+# =====================================================
+
+- name: Display DNS verification
+  debug:
+    msg:
+      - "{{ domain_name }} -> {{ domain_resolution.stdout | trim }}"
+      - "{{ api_domain_name }} -> {{ api_domain_resolution.stdout | trim }}"
+      - "Elastic IP -> {{ elastic_ip }}"
+  when: not cert_exists.stat.exists

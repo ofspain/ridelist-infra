@@ -1,0 +1,62 @@
+# =====================================================
+# Global Configuration
+# Shared by all environments
+# =====================================================
+
+application_name: ridelist
+
+aws_region: eu-west-1
+
+application_root: /opt/ridelist
+
+# =====================================================
+# Storage
+# =====================================================
+
+data_root: /data
+
+data_mount_point: "{{ data_root }}"
+
+postgres_data_dir: "{{ data_root }}/postgres"
+
+uploads_dir: "{{ data_root }}/uploads"
+
+# =====================================================
+# Docker
+# =====================================================
+
+docker_network_name: ridelist_ec2_network
+
+compose_project_name: ridelist
+
+# =====================================================
+# Container Names
+# =====================================================
+
+postgres_container: ridelist-postgres
+
+backend_container: ridelist-backend
+
+frontend_container: ridelist-frontend
+
+nginx_container: ridelist-nginx
+
+# =====================================================
+# Internal Ports
+# =====================================================
+
+backend_port: 8090
+
+frontend_port: 3000
+
+postgres_port: 5432
+
+
+# =====================================================
+# ECRs
+# =====================================================
+
+backend_repository_name: ridelist-backend
+
+frontend_repository_name: ridelist-frontend
+account_id: "774173912604"

@@ -1,0 +1,6 @@
+---
+data_root: /data
+
+postgres_data_dir: "{{ data_root }}/postgres"
+
+uploads_dir: "{{ data_root }}/uploads"

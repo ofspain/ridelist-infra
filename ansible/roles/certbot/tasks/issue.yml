@@ -1,0 +1,53 @@
+---
+# =====================================================
+# Ensure webroot exists (for challenge fallback flexibility)
+# =====================================================
+
+- name: Create certbot webroot directory
+  file:
+    path: "{{ certbot_webroot }}"
+    state: directory
+    mode: "0755"
+
+# =====================================================
+# Stop nginx temporarily if running
+# (critical for port 80 binding)
+# =====================================================
+
+- name: Stop nginx container (if running)
+  shell: docker stop {{ nginx_container }} || true
+  changed_when: false
+
+# =====================================================
+# Issue certificate
+# =====================================================
+
+- name: Run certbot standalone issuance
+  command: >
+    certbot certonly --standalone
+    --non-interactive
+    --agree-tos
+    --email {{ certbot_email }}
+    {% for d in certbot_domains %}
+    -d {{ d }}
+    {% endfor %}
+  args:
+    creates: /etc/letsencrypt/live/{{ domain_name }}/fullchain.pem
+
+# =====================================================
+# Ensure permissions are safe
+# =====================================================
+
+- name: Set certificate permissions
+  file:
+    path: /etc/letsencrypt
+    mode: "0755"
+    recurse: yes
+
+# =====================================================
+# Restart nginx container
+# =====================================================
+
+- name: Start nginx container
+  shell: docker start {{ nginx_container }} || true
+  changed_when: false

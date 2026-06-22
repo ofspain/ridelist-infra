@@ -1,0 +1,22 @@
+---
+# =====================================================
+# Render Nginx Configurations (Docker-based reverse proxy)
+# =====================================================
+
+- name: Render main nginx.conf
+  template:
+    src: nginx.conf.j2
+    dest: "{{ application_root }}/nginx/nginx.conf"
+    mode: "0644"
+
+- name: Render frontend reverse proxy config
+  template:
+    src: nginx.frontend.conf.j2
+    dest: "{{ application_root }}/nginx/frontend.conf"
+    mode: "0644"
+
+- name: Render backend reverse proxy config
+  template:
+    src: nginx.backend.conf.j2
+    dest: "{{ application_root }}/nginx/backend.conf"
+    mode: "0644"

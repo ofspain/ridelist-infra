@@ -1,10 +1,11 @@
+import json
 from aws_cdk import (
     Stack,
     aws_ec2 as ec2,
     aws_iam as iam,
     aws_ssm as ssm,
     Size as size,
-    RemovalPolicy as removal_policy,
+    RemovalPolicy as removal_policy, Tags, Aws
 )
 from constructs import Construct
 
@@ -101,167 +102,37 @@ class ComputeStack(Stack):
             )
         )
 
+        # -------------------------------------------------------------
+        # Add read access for Parameter Store:
+        # -------------------------------------------------------------
+
+        self.instance_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "ssm:GetParameter",
+                    "ssm:GetParameters"
+                ],
+                resources=["*"]
+            )
+        )
+
         user_data = ec2.UserData.for_linux()
 
         user_data.add_commands(
 
-            # =====================================================
-            # SYSTEM UPDATE
-            # =====================================================
-            "yum update -y",
+            "dnf update -y || yum update -y",
 
-            # =====================================================
-            # INSTALL DOCKER
-            # =====================================================
-            "yum install -y docker",
+            "dnf install -y python3 git jq awscli nvme-cli || yum install -y python3 git jq awscli nvme-cli",
 
-            "systemctl enable docker",
-            "systemctl start docker",
-
-            "usermod -a -G docker ec2-user",
-
-            # =====================================================
-            # INSTALL DOCKER COMPOSE V2
-            # =====================================================
-            "mkdir -p /usr/local/lib/docker/cli-plugins",
-
-            (
-                "curl -SL "
-                "https://github.com/docker/compose/"
-                "releases/latest/download/"
-                "docker-compose-linux-x86_64 "
-                "-o /usr/local/lib/docker/"
-                "cli-plugins/docker-compose"
-            ),
-
-            (
-                "chmod +x "
-                "/usr/local/lib/docker/"
-                "cli-plugins/docker-compose"
-            ),
-
-            # =====================================================
-            # INSTALL UTILITIES
-            # =====================================================
-            "yum install -y git jq aws-cli certbot",
-
-            # =====================================================
-            # LETSENCRYPT + CERTBOT DIRECTORIES
-            # =====================================================
-
-            # Create certbot webroot
-            "mkdir -p /var/www/certbot",
-
-            # Ensure letsencrypt directory exists
-            "mkdir -p /etc/letsencrypt",
-
-            # Permissions
-            "chmod 755 /var/www/certbot",
-            "chmod 755 /etc/letsencrypt",
-
-            # =====================================================
-            # EBS DATA VOLUME SETUP
-            # =====================================================
-
-            # Wait for EBS device
-            "sleep 10",
-
-            # Detect NVME EBS disk
-            "DATA_DEVICE=$(lsblk -ln -o NAME,TYPE | awk '$2==\"disk\" && $1 ~ /nvme1n1/ {print \"/dev/\"$1}')",
-
-            # Fallback
-            "if [ -z \"$DATA_DEVICE\" ]; then DATA_DEVICE=/dev/nvme1n1; fi",
-
-            # Format if needed
-            "if ! blkid $DATA_DEVICE; then mkfs -t xfs $DATA_DEVICE; fi",
-
-            # Create mount point
-            "mkdir -p /data",
-
-            # Mount
-            "mount $DATA_DEVICE /data",
-
-            # Persist mount
-            "UUID=$(blkid -s UUID -o value $DATA_DEVICE)",
-
-            (
-                "grep -q \"$UUID\" /etc/fstab || "
-                "echo \"UUID=$UUID /data xfs defaults,nofail 0 2\" >> /etc/fstab"
-            ),
-
-            # =====================================================
-            # POSTGRES DATA DIRECTORY
-            # =====================================================
-            "mkdir -p /data/postgres",
-
-            "chmod 777 /data/postgres",
-
-            # =====================================================
-            # APPLICATION DIRECTORY
-            # =====================================================
             "mkdir -p /opt/ridelist",
 
-            "chown -R ec2-user:ec2-user /opt/ridelist",
-
-            # =====================================================
-            # CONFIG LOADER SCRIPT
-            # =====================================================
-
             (
-                "cat <<'EOF' > /opt/ridelist/config-loader.sh\n"
-                "#!/bin/bash\n"
-                "set -euo pipefail\n"
-                "\n"
-                "ENV=${ENVIRONMENT:-test}\n"
-                "BASE_DIR=/opt/ridelist\n"
-                "OUT_FILE=$BASE_DIR/.env\n"
-                "\n"
-                "echo 'Loading config for:' $ENV\n"
-                "> $OUT_FILE\n"
-                "\n"
-                "SECRETS=(database jwt app-config smtp aws)\n"
-                "\n"
-                "for SECRET in \"${SECRETS[@]}\"; do\n"
-                "  echo \"Fetching $SECRET\"\n"
-                "  VALUE=$(aws secretsmanager get-secret-value \\\n"
-                "    --secret-id /ridelist/$ENV/$SECRET \\\n"
-                "    --query SecretString --output text)\n"
-                "\n"
-                "  echo \"$VALUE\" | jq -r 'to_entries[] | \"\\(.key)=\\(.value)\"' >> $OUT_FILE\n"
-                "done\n"
-                "\n"
-                "chmod 600 $OUT_FILE\n"
-                "echo 'DONE'\n"
-                "EOF\n"
-            ),
-
-            "chmod +x /opt/ridelist/config-loader.sh",
-
-            "chown ec2-user:ec2-user /opt/ridelist/config-loader.sh",
-
-            # =====================================================
-            # ENVIRONMENT FILE
-            # =====================================================
-
-            (
-                    "echo 'ENVIRONMENT=" +
-                    self.node.try_get_context(Constants.DEPLOYMENT_ENVIRONMENT_KEY) +
+                    "echo 'ENVIRONMENT="
+                    + env +
                     "' > /opt/ridelist/.env.runtime"
             ),
 
-            "chown ec2-user:ec2-user /opt/ridelist/.env.runtime",
-
-            # =====================================================
-            # LOAD ENV CONFIG
-            # =====================================================
-            "/opt/ridelist/config-loader.sh",
-
-            # =====================================================
-            # COMPLETE MARKER
-            # =====================================================
-            "echo 'RIDELIST_SETUP_COMPLETE' > /opt/ridelist/.setup_complete",
-
-            "echo 'User data script completed'",
+            "echo READY > /opt/ridelist/bootstrap.status"
         )
 
         # =========================================================
@@ -404,13 +275,13 @@ class ComputeStack(Stack):
                 self,
                 "InstanceIdParam"
             ),
-
             parameter_name=(
                 f"/ridelist/{env}"
-                f"/compute/ec2/instance-id"
+                "/compute/ec2/instance-id"
             ),
-
-            string_value=self.instance.instance_id,
+            string_value=json.dumps({
+                "EC2_INSTANCE_ID": self.instance.instance_id
+            }),
         )
 
         ssm.StringParameter(
@@ -419,13 +290,85 @@ class ComputeStack(Stack):
                 self,
                 "ElasticIPParam"
             ),
-
             parameter_name=(
                 f"/ridelist/{env}"
-                f"/compute/ec2/elastic-ip"
+                "/compute/ec2/elastic-ip"
             ),
+            string_value=json.dumps({
+                "EC2_ELASTIC_IP": self.eip.ref
+            }),
+        )
 
-            string_value=self.eip.ref,
+        ssm.StringParameter(
+            self,
+            formulate_resource_id(
+                self,
+                "DataVolumeIdParam"
+            ),
+            parameter_name=(
+                f"/ridelist/{env}"
+                "/storage/data-volume-id"
+            ),
+            string_value=json.dumps({
+                "DATA_VOLUME_ID": data_volume.volume_id
+            }),
+        )
+
+        # =========================================================
+        # AWS ACCOUNT ID
+        # =========================================================
+
+        ssm.StringParameter(
+            self,
+            formulate_resource_id(
+                self,
+                "AwsAccountIdParam"
+            ),
+            parameter_name=(
+                f"/ridelist/{env}"
+                "/infrastructure/aws-account-id"
+            ),
+            string_value=json.dumps({
+                "AWS_ACCOUNT_ID": Aws.ACCOUNT_ID
+            }),
+        )
+
+        # =========================================================
+        # AWS REGION
+        # =========================================================
+
+        ssm.StringParameter(
+            self,
+            formulate_resource_id(
+                self,
+                "AwsRegionParam"
+            ),
+            parameter_name=(
+                f"/ridelist/{env}"
+                "/infrastructure/aws-region"
+            ),
+            string_value=json.dumps({
+                "AWS_REGION": Aws.REGION
+            }),
+        )
+
+        # ==========================================================
+        # Tagging
+        # ==========================================================
+
+        Tags.of(data_volume).add(
+            "Application",
+            "RideList"
+        )
+
+        Tags.of(data_volume).add(
+            "Environment",
+            env
+        )
+
+        Tags.of(data_volume).add(
+            "Role",
+            "data"
         )
 
         # =========================================================

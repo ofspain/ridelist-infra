@@ -1,0 +1,107 @@
+---
+- name: Read volume id from SSM
+  shell: >
+    aws ssm get-parameter
+    --name /ridelist/{{ deployment_env }}/storage/data-volume-id
+    --query Parameter.Value
+    --output text
+    --region {{ aws_region }}
+  register: volume_id_result
+  changed_when: false
+
+- name: Debug raw SSM response
+  debug:
+    var: volume_id_result.stdout
+
+- name: Store volume id
+  set_fact:
+    data_volume_id: >-
+      {{
+        (volume_id_result.stdout | from_json).values()
+        | list
+        | first
+      }}
+
+- name: Debug resolved volume id
+  debug:
+    msg:
+      - "volume_id=[{{ data_volume_id }}]"
+      - "length={{ data_volume_id | length }}"
+
+#
+# Give Linux/NVMe time to discover newly attached EBS volumes
+#
+- name: Wait for EBS NVMe devices to appear
+  shell: |
+    nvme list | grep -c "Amazon Elastic Block Store" || true
+  register: nvme_count
+  until: (nvme_count.stdout | int) > 0
+  retries: 12
+  delay: 5
+  changed_when: false
+
+#
+# Dump everything we know about attached EBS NVMe devices
+#
+- name: Debug NVMe devices
+  shell: |
+    echo "=== NVME LIST ==="
+    nvme list
+
+    echo
+    echo "=== SERIAL NUMBERS ==="
+
+    for dev in $(nvme list | awk '/Amazon Elastic Block Store/ {print $1}')
+    do
+      SERIAL=$(nvme id-ctrl -v "$dev" | awk -F': *' '/^sn/ {print $2}')
+
+      echo "DEVICE=$dev SERIAL=$SERIAL"
+    done
+  register: nvme_debug
+  changed_when: false
+
+- name: Print NVMe debug information
+  debug:
+    var: nvme_debug.stdout_lines
+
+#
+# Resolve volume id -> device mapping
+#
+- name: Find matching NVMe device
+  shell: |
+    TARGET="{{ data_volume_id }}"
+
+    for dev in $(nvme list | awk '/Amazon Elastic Block Store/ {print $1}')
+    do
+      SERIAL=$(nvme id-ctrl -v "$dev" | awk -F': *' '/^sn/ {print $2}')
+
+      NORMALIZED="vol-${SERIAL#vol}"
+
+      if [ "$NORMALIZED" = "$TARGET" ]; then
+        echo "$dev"
+        exit 0
+      fi
+    done
+
+    exit 1
+  register: nvme_device_result
+  changed_when: false
+  failed_when: false
+
+- name: Fail if device not found
+  fail:
+    msg: |
+      Could not locate NVME device for EBS volume {{ data_volume_id }}
+
+      NVME inventory:
+
+      {{ nvme_debug.stdout }}
+  when: nvme_device_result.stdout | trim == ""
+
+- name: Store resolved device
+  set_fact:
+    data_device: "{{ nvme_device_result.stdout | trim }}"
+
+- name: Debug resolved device
+  debug:
+    msg: "Resolved {{ data_volume_id }} -> {{ data_device }}"

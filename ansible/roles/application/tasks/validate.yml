@@ -1,0 +1,49 @@
+---
+# =====================================================
+# Collect Running Containers
+# =====================================================
+
+- name: Get running containers
+  command: docker ps --format "{{'{{'}}.Names{{'}}'}}"
+  register: running_containers
+  changed_when: false
+
+# =====================================================
+# Validate PostgreSQL
+# =====================================================
+
+- name: Verify postgres container
+  assert:
+    that:
+      - postgres_container in running_containers.stdout_lines
+    fail_msg: "Postgres container is not running"
+
+# =====================================================
+# Validate Backend
+# =====================================================
+
+- name: Verify backend container
+  assert:
+    that:
+      - backend_container in running_containers.stdout_lines
+    fail_msg: "Backend container is not running"
+
+# =====================================================
+# Validate Frontend
+# =====================================================
+
+- name: Verify frontend container
+  assert:
+    that:
+      - frontend_container in running_containers.stdout_lines
+    fail_msg: "Frontend container is not running"
+
+# =====================================================
+# Validate Nginx
+# =====================================================
+
+- name: Verify nginx container
+  assert:
+    that:
+      - nginx_container in running_containers.stdout_lines
+    fail_msg: "Nginx container is not running"

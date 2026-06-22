@@ -10,7 +10,7 @@ from .utils.utilities import (
     provision_cfnoutput
 )
 
-from .utils.config_constants import fix_az_config, Constants
+from .utils.config_constants import fix_config, Constants
 
 
 class VPCStack(Stack):
@@ -21,7 +21,7 @@ class VPCStack(Stack):
         self.env_name = self.node.try_get_context(Constants.DEPLOYMENT_ENVIRONMENT_KEY)
 
         vpc_name = formulate_resource_id(self, "VPC")
-        self.env_config = fix_az_config(self)
+        self.env_config = fix_config(self)
 
         # ----------------------------
         # NETWORK STRATEGY BY ENV

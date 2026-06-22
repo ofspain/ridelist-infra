@@ -1,0 +1,9 @@
+- name: Restart backend only if needed
+  shell: docker compose restart backend
+  args:
+    chdir: /opt/ridelist
+
+- name: Restart frontend only if needed
+  shell: docker compose restart frontend
+  args:
+    chdir: /opt/ridelist

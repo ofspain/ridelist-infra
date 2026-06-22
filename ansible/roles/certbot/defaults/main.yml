@@ -1,0 +1,9 @@
+---
+certbot_email: admin@{{ domain_name }}
+certbot_webroot: /var/www/certbot
+
+certbot_domains:
+  - "{{ domain_name }}"
+  - "{{ api_domain_name }}"
+
+certbot_staging: false

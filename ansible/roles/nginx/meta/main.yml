@@ -1,0 +1,6 @@
+galaxy_info:
+  role_name: nginx
+  author: ridelist
+  description: Traffic routing brainbox for EC2 deployment
+
+dependencies: []

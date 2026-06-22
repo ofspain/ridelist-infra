@@ -1,0 +1,11 @@
+- name: Add users to docker group
+  user:
+    name: "{{ item }}"
+    groups: docker
+    append: yes
+  loop: "{{ docker_users }}"
+
+- name: Ensure Docker socket permissions
+  file:
+    path: /var/run/docker.sock
+    mode: "0660"
