@@ -47,7 +47,7 @@ nginx_container: ridelist-nginx
 
 backend_port: 8090
 
-frontend_port: 3000
+frontend_port: 80
 
 postgres_port: 5432
 
