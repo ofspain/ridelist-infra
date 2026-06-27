@@ -1,12 +1,8 @@
-- name: Render frontend route
-  template:
-    src: nginx.frontend.conf.j2
-    dest: /etc/nginx/conf.d/frontend.conf
-
-- name: Render api route
-  template:
-    src: nginx.backend.conf.j2
-    dest: /etc/nginx/conf.d/api.conf
+- name: Create nginx config directory
+  file:
+    path: "{{ application_root }}/nginx"
+    state: directory
+    mode: "0755"
 
 - name: Render nginx main config
   template:
@@ -26,7 +22,11 @@
     dest: "{{ application_root }}/nginx/backend.conf"
     mode: "0644"
 
-
+- name: Render redirect routing config
+  template:
+    src: nginx.redirect.conf.j2
+    dest: "{{ application_root }}/nginx/redirect.conf"
+    mode: "0644"
 
  #Ansible Templates
 #        │
